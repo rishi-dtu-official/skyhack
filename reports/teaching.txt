@@ -1,0 +1,126 @@
+SKYHACK FLIGHT DIFFICULTY SCORING – FULL WALKTHROUGH
+
+
+
+1. Why this project exists
+
+ Operational pain point: Flight departure delays create cascading disruptions across the network. Operations teams need an earlywarning tool that highlights flights most likely to struggle so they can stage resources proactively.
+ Hackathon goal: Build a data product that ingests two weeks of ORD departure data and outputs a ranked list of “difficult” flights with explanations and cost impact.
+ Success criteria: High recall on difficult flights, trustworthy probabilities (calibration), explainable drivers, quantified financial upside, and polished documentation for reviewers.
+
+2. Starting point & raw ingredients
+
+ Source tables (CSV files in data/raw/):
+   flight_level.csv: flight schedule, equipment, and realized delay information.
+   pnr_flight_level.csv: passenger booking level records with party size, fare class, and lead time.
+   pnr_remarks.csv: special service requests (SSR) associated with bookings.
+   bag_level.csv: baggage transfers indicating connection pressure.
+   airports.csv: metadata such as minimum turn times and local timezone.
+ Environment: Python 3.12, pandas, numpy, scikitlearn, SHAP, DuckDB, matplotlib, seaborn, rich console logging.
+ Repository structure: Source code lives in src/, SQL notebooks in sql/, artifacts (figures, tables, models) in artifacts/, final export in skyhack.csv, and reports under reports/.
+
+3. Delivery approach at a glance
+
+We designed an opinionated pipeline (python m src.pipeline) that orchestrates the entire lifecycle:
+1. Load raw tables into pandas dataframes.
+2. Engineer aggregated feature sets (flight, passenger, baggage, SSRlevel) using src/feature_engineering.py.
+3. Train and calibrate a HistGradientBoosting model with temporal validation plus a recalloriented rule boost (src/scoring.py).
+4. Score every flight, attach SHAP explanations, rank flights daily, export skyhack.csv.
+5. Run EDA (src/eda.py) to quantify patterns and render interpretive plots.
+6. Calculate costbenefit, derive insights, and execute DuckDB SQL analytics for supporting tables.
+7. Persist all artifacts and documentation for reviewers.
+
+4. Data preparation & feature engineering
+
+The key design principle was to mirror how frontline teams reason about risk: tight turns, heavy transfer flows, vulnerable passenger mixes, and demanding station operations. Highlights:
+ Temporal context: minutes_since_first_departure, minutes_since_bank_start, is_first_departure_of_day, sine/cosine encodings of hour and dayofweek, bank buckets, weekend flags.
+ Turntime pressure: buffers relative to minimum turn, ratios of scheduled vs minimum ground times, flags for shortfalls.
+ Passenger mix: load factor, PNR sizes, ratios of children, lap infants, strollers, basic economy, shortlead purchases, pressure index summarizing crowding risk.
+ Special services: counts and perPNR rates of wheelchairs (manual/electric), unaccompanied minors, overall SSR density.
+ Baggage stress: total bags, transfer vs originating bags, hot transfers, perpassenger ratios.
+ Operational context: carrier mainline vs express, widebody flag, international service intensity, rank of departure within station day.
+The build_feature_frames function in src/feature_engineering.py assembles these features into cohesive flight, PNR, and bag dataframes that feed the downstream steps.
+
+
+5. Exploratory data analysis (EDA)
+
+Purpose: ground the modeling work in real patterns, validate feature intuition, and produce visuals for the report.
+ Key metrics (artifacts/tables/eda_metrics.json):
+   Average departure delay in minutes and share of late departures.
+   Count/percentage of flights with tight turn buffers (turn_shortfall_flag).
+   Mean transfer ratio signalling connectionheavy flights.
+   Load factor distribution (quartiles) and correlations with delays.
+   Correlations among SSR density, load factor, and positive delays, including a partial correlation to isolate SSR effect.
+ Visuals (artifacts/figures/):
+   departure_delay_distribution.png: histogram with KDE and mean indicator.
+   load_vs_delay.png: scatterplot colored by difficulty class to reveal highload/highdelay pockets.
+   ssr_per_pnr_by_difficulty.png: bar chart showing SSR pressure rising with difficulty class.
+Interpretation: tight turns and high transfer ratios align with higher delays, SSRheavy passenger mixes add operational demand, and certain timeofday patterns drive risk.
+
+6. Modeling strategy
+
+ Classifier choice: HistGradientBoostingClassifier strikes a balance between nonlinear interactions and smalltomedium dataset size; class weights counter the imbalance of difficult flights.
+ Temporal validation: We cut the data in half chronologically—earlier dates for training (with GroupKFold by departure date), later dates for holdout evaluation—to respect operational drift.
+ Hyperparameters: 600 iterations, depth 5, learning rate 0.05, minimum leaf size of 50, and L2 regularization of 1.0, selected for recall stability without overfitting.
+ Threshold tuning: Candidate thresholds drawn from score quantiles plus manual values; we target recall ≥ 0.7 using the F2 score (beta=2) to emphasise falsenegative avoidance.
+ Calibration: Isotonic calibration (CalibratedClassifierCV with cv="prefit") on the temporal holdout ensures probability estimates line up with observed frequencies.
+ Rulebased recall boost: After calibration we add a 0.2 probability lift when flights hit obvious red flags (tight turns + high transfers, extreme PNR pressure, heavy SSR volume) to guarantee operationally intuitive cases are flagged even if the model hesitates.
+
+7. Generating the flight difficulty score
+
+The apply_scoring function executes the following:
+1. Score every flight with both raw and calibrated probabilities.
+2. Apply the rulebased lift and store the blended probability.
+3. Compare the blended probability to the tuned threshold to create a binary difficulty prediction.
+4. Compute SHAP values for all flights, format the top three drivers per flight (top_difficulty_drivers), and export global feature importances (artifacts/tables/feature_importances.csv).
+5. Generate a SHAP dependence plot relating turn buffer to transfer bags for interpretability (artifacts/figures/shap_turn_buffer_vs_transfer.png).
+6. Rank flights within each day (percentiles + daily_rank) and assign qualitative buckets (Difficult / Medium / Easy) for quick triage.
+7. Export the enriched dataset to skyhack.csv with key context columns (seats, buffers, load, transfer ratios, SSR density, temporal features, etc.).
+8. Persist serialized model + calibrator (artifacts/models/difficulty_model.joblib) and holdout metrics (artifacts/tables/model_metrics.json).
+9. Run a costbenefit module that converts holdout false positives/negatives into daily/annual dollar estimates (artifacts/tables/cost_benefit_analysis.json).
+
+8. Explainability & business storytelling
+
+ Metrics overview: After blending, we achieved ≈97% recall and ≈54% precision on the temporal holdout, with PRAUC and ROCAUC logged for transparency.
+ Costbenefit: Assuming 400 departures/day, $5,000 impact per missed difficult flight, and $200 per false alarm, the model produces an illustrative ~$626K/day savings versus reactive operations. These figures feed both reports/report.txt and the visual visualisation/expected_daily_cost_comparison.png.
+ Visual assets (visualisation/):
+   calibration_comparison.png: Raw vs calibrated reliability curve.
+   confusion_matrix_blended.png: Holdout confusion breakdown for the blended score.
+   top_feature_importances.png: SHAP mean |impact| view highlighting dominant drivers.
+   expected_daily_cost_comparison.png: Business case plot vs baseline.
+ Narrative artifacts: reports/report.txt synthesises findings, while artifacts/tables/recommended_actions.json lists targeted interventions per destination.
+
+9. How to reproduce everything
+
+1. Install dependencies (pip install r requirements.txt).
+2. (Optional) Clear prior outputs (rm rf artifacts data/processed skyhack.csv visualisation).
+3. Run the pipeline from the repo root: python m src.pipeline (or /workspaces/skyhack/.venv/bin/python m src.pipeline inside the provided virtualenv).
+4. Inspect outputs:
+    skyhack.csv for the scored flights.
+    artifacts/ for metrics, figures, costbenefit JSON, and model artifact.
+    visualisation/ for executivefacing charts.
+    reports/report.txt and this reports/teaching.txt for context.
+
+10. What happens under the hood (process summary)
+
+ Data ingestion: src/data_loaders.py reads each CSV, logs shape, and hands raw frames to feature builders.
+ Feature engineering: src/feature_engineering.py merges datasets, applies time zone adjustments, calculates buffers/ratios, and returns a FlightFeatureFrames dataclass containing flight, PNR, and bag tables.
+ Model training: train_difficulty_model orchestrates train/test split, crossvalidated gradient boosting runs, threshold tuning, calibration, rule blending, and metrics packaging.
+ Scoring/export: apply_scoring enriches the feature frame with probabilities, explanations, rankings, and writes skyhack.csv plus ancillary artifacts.
+ EDA/insights: run_eda computes summary metrics and Figures; src/insights.py produces narrativefriendly tables and recommended actions; DuckDB SQL scripts in sql/ generate additional aggregated tables.
+ Documentation: The README and reports are kept in sync so reviewers can replicate results quickly.
+
+11. Lessons learned & future extensions
+
+ Reliable flight scoring needs calibrated probabilities; raw classifier outputs were overconfident, so isotonic calibration was essential.
+ Rulebased boosts provide operational guardrails, ensuring obviously highrisk flights never slip through due to limited training examples.
+ SHAP explanations resonate with frontline teams because they surface concrete drivers ("Turn buffer ↓0.35", "Transfer bags ↑0.28").
+ Further work could incorporate weather feeds, crew connection data, or reinforcement learning for resource allocation, but the current pipeline is productionready for proofofconcept.
+
+12. Where to ask questions
+
+ Start with README.md for quick setup.
+ Open src/pipeline.py to trace the orchestration.
+ Use reports/report.txt for the executive summary and actionable insights.
+ Refer to this reports/teaching.txt whenever you need a walkthrough refresher.
+
