@@ -1,0 +1,20 @@
+{
+  "average_departure_delay_minutes": 21.18496110630942,
+  "percent_late_departures": 0.4961106309420916,
+  "flights_close_to_min_turn_count": 780,
+  "flights_close_to_min_turn_pct": 0.09630818619582665,
+  "mean_transfer_ratio": 0.6017278186464255,
+  "load_factor_stats": {
+    "count": 8099.0,
+    "mean": 0.8871042849999129,
+    "std": 0.14991516963948376,
+    "min": 0.06,
+    "25%": 0.8493975903614458,
+    "50%": 0.94,
+    "75%": 0.9879518072289156,
+    "max": 1.0263157894736843
+  },
+  "load_delay_correlation": -0.18200393635853734,
+  "ssr_delay_correlation": 0.05235231175945343,
+  "ssr_delay_partial_correlation": 0.042666231800187075
+}

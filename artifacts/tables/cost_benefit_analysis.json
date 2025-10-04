@@ -1,0 +1,21 @@
+{
+  "assumptions": {
+    "cost_per_false_positive": 200,
+    "cost_per_false_negative": 5000,
+    "flights_per_day": 400
+  },
+  "baseline_delay_rate": 0.33433595557612217,
+  "actual_delay_rate": 0.3024062933826932,
+  "false_negative_rate": 0.01018047200370199,
+  "false_positive_rate": 0.27348449791763074,
+  "true_positive_rate": 0.3241554835724202,
+  "expected_daily_cost_baseline": 668671.9111522443,
+  "expected_daily_cost_model": 42239.70384081444,
+  "expected_daily_savings": 626432.2073114299,
+  "expected_annual_savings": 228647755.6686719,
+  "holdout_flight_count": 4322,
+  "holdout_positive_count": 1445,
+  "holdout_false_negative_count": 44,
+  "holdout_false_positive_count": 1182,
+  "holdout_true_positive_count": 1401
+}

@@ -1,0 +1,89 @@
+SkyHack Flight Difficulty Analysis
+=================================
+
+1. Overview
+-----------
+- Scope: Two weeks of ORD departures across flight, passenger, baggage, and service datasets.
+- Objective: Quantify relative flight difficulty at a daily cadence, surface operational drivers, and recommend proactive actions for frontline teams.
+- Artifacts: `skyhack.csv` (difficulty rankings), plots in `artifacts/figures`, tables in `artifacts/tables`, and the serialized model under `artifacts/models`.
+
+2. Data preparation
+-------------------
+- Loaded five raw CSV extracts (flight-level, PNR-level, PNR remarks, bag-level, airports) into pandas and DuckDB.
+- Standardized datetime formats, created a unified flight key, and engineered >30 features spanning turnaround buffers, passenger mix, booking lead time, baggage mix, and special-service demand.
+- Persisted processed tables to Parquet for reproducibility (`data/processed/`).
+
+3. Exploratory data analysis
+----------------------------
+A. Average delay & late departures
+   - Mean departure delay: 21.2 minutes.
+   - 49.6% of departures left after the scheduled local time (see `artifacts/figures/departure_delay_distribution.png`).
+
+B. Turn-time stress
+   - 780 flights (9.6%) had scheduled ground time within five minutes of the minimum turnaround requirement.
+   - 630 flights were scheduled *below* the minimum turn guidance, highlighting chronic compression risk.
+
+C. Transfer vs. checked bag mix
+   - Average transfer share: 60.2% of bags (transfer + hot-transfer) vs. origin-checked bags, driven largely by connecting banks.
+   - Difficult flights averaged 0.51 transfer bags per passenger compared to 0.36 on easy flights.
+
+D. Passenger loads and difficulty
+   - Load factor distribution: mean 0.89 (Q1 0.85, median 0.94, Q3 0.99); difficult flights averaged 0.86 vs. 0.89–0.90 on medium/easy segments.
+   - Correlation between load factor and departure delay: -0.18 (flights with lighter loads tended to manifest the worst delays, often Express and short-turn missions).
+
+E. Special service requests vs. delay
+   - SSR per PNR vs. delay correlation: 0.052 (weak positive).
+   - Partial correlation controlling for load factor: 0.043 – SSR-intensive flights are *slightly* more delay-prone even after adjusting for load, suggesting incremental staffing attention still matters.
+
+Additional visuals in `artifacts/figures` cover load factor vs. actual delay and SSR intensity by difficulty class.
+
+4. Flight Difficulty Score
+--------------------------
+- Label: Flights with a positive departure delay ≥15 minutes (`difficulty_actual_flag`).
+- Feature depth: Temporal context now includes `minutes_since_first_departure`, `minutes_since_bank_start`, and `is_first_departure_of_day` alongside hour-of-day, wave bucket, and station rank. International/wide-body flags and booking-pressure features remain in place, lifting separability on UTC night banks and first-push departures.
+- Model: HistGradientBoostingClassifier (learning rate 0.05, max depth 5, 600 iterations, class_weight {0:1, 1:2}) trained on the enriched feature matrix. An isotonic `CalibratedClassifierCV` layer refines probability calibration, and a +0.2 rule boost guards recall for hot-transfer flights running on compressed turn buffers.
+- Validation: Temporal holdout split at 2025-08-07 with GroupKFold cross-validation by departure date. Cross-validated ROC-AUC = 0.926 (±), PR-AUC = 0.880. On the holdout set, the calibrated+blended score delivers recall 0.970, precision 0.542, F2 0.838, PR-AUC 0.842 while missing only 44 difficult flights out of 1,445.
+- Explainability: Flight-level SHAP driver strings (`top_difficulty_drivers`) and global importances (`artifacts/tables/feature_importances.csv`) surface the dominant contributors (turn buffer compression, transfer density, booking pressure, SSR load).
+- Output: `skyhack.csv` now ships raw vs. calibrated probabilities, rule-trigger flags, SHAP driver text, and the new temporal features to support downstream analytics. Additional decision-support visuals live under `visualisation/` (calibration curve, confusion matrix, cost comparison, feature bar chart).
+
+5. Feature interaction insights
+-------------------------------
+- The SHAP dependency plot (`artifacts/figures/shap_turn_buffer_vs_transfer.png`) shows turn buffer sensitivity exploding once transfer bags per pax exceed ~0.45. Flights with ≥15-minute buffers remain benign even with heavy transfer loads, while anything under 10 minutes coupled with transfer density >0.5 spikes difficulty probability above 0.8.
+- Interaction insight: the model is effectively capturing that *when* a bank loads both transfer pressure and tight turns, staffing/ramp mitigations need to trigger immediately—validating the rule-based boost we layered on the model output.
+- Calibration insight (`visualisation/calibration_comparison.png`): the isotonic layer pulls the raw model closer to the diagonal, while the blended score maintains recall with only a slight tendency to over-warn in the upper deciles (acceptable for operations where recall dominates).
+- Performance snapshot (`visualisation/confusion_matrix_blended.png`): only 44 difficult flights were missed on the holdout window, while 1,401 were caught, reinforcing the favorable recall/precision trade-off.
+
+6. Operational insights
+-----------------------
+Destination patterns (`artifacts/tables/destination_difficulty_summary.csv`)
+- European and leisure endpoints (ATH, BCN, BRU, CDG, DUB) logged 100% of departures in the “Difficult” tier over the two weeks, pairing heavy transfer flow with high SSR-per-PNR.
+- Mountain/sun destinations (SUN, SNN) also spiked difficulty, reflecting tight turns and transfer-heavy banks.
+
+Driver diagnostics (`artifacts/tables/difficulty_driver_deltas.csv`)
+- Compared with “Easy” flights, “Difficult” flights show:
+  * +11.8 percentage-point increase in transfer-bag ratio.
+  * +0.11 bags per passenger overall.
+  * +0.03 increase in the booking pressure index (late-booking surge).
+  * -90.6 minute reduction in scheduled vs. minimum turn-time buffer.
+- Hot-transfer share is elevated across all classes, but transfer *density* per passenger is distinctly higher on difficult flights.
+
+7. Recommended actions
+----------------------
+- Prioritize stations: Focus cross-functional huddles on ATH, BCN, BRU, CDG, and DUB departures—deploy proactive recovery playbooks (extra ramp carts, pre-assigned wheelchair agents, customer comms) before bank peaks.
+- Transfer baggage surge plan: Pre-alert baggage sortation for high transfer ratios; carve dedicated hot-transfer lanes 45 minutes before push on flagged flights.
+- Short-turn mitigation: Expand ground-time buffers where possible; when schedule-locked, front-load cabin cleaning and fueling resources, and stage flex teams for <10-minute buffers.
+- Late-booking monitoring: Integrate the booking-pressure index into morning ops calls to anticipate same-day gate congestion and staff accordingly.
+- SSR readiness: Even with mild partial correlation, SSR-heavy flights trend late—schedule wheelchair/stroller runners and gate coordinators to arrive 20 minutes earlier on the highest SSR per PNR departures.
+- Reviewer guide: See `README.md` for a concise summary, reproducibility instructions, and visualization catalog. ⚠️ Large artifacts (`artifacts/`, `visualisation/`, `skyhack.csv`) can be regenerated via the pipeline if omitted from version control.
+
+8. Cost-benefit analysis
+------------------------
+- Using the staffing cost assumptions ($200 per false positive dispatch, $5,000 per missed difficult flight, 400 flights/day), the calibrated model cuts expected daily cost from $669K (do nothing, react to every delayed flight) to $42K—unlocking ~$626K saved per day or ~$229M annually.
+- The holdout set shows a false-negative rate of just 1.0% (44 flights) versus a 32.4% true-positive rate, indicating the score is far better at flagging difficult flights than the status quo while keeping the false-positive burden predictable (27.3% of flights flagged for extra prep).
+
+9. Next steps
+-------------
+- Enrich the feature set with external feeds (OAG weather, crew legality, tail routing) to capture residual variance noted in the SHAP plots.
+- Stand up a lightweight dashboard (Looker/Streamlit) that visualizes calibrated probabilities, SHAP drivers, and cost implications for the next 24-hour schedule.
+- Monitor calibration drift monthly; retrain isotonic mapping with rolling holdout data to keep “70%” predictions meaningfully aligned with realized outcomes.
+- Expand beyond ORD and experiment with complementary models (e.g., XGBoost, time-aware gradient boosting) to validate portability and potential uplift.
