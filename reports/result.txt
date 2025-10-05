@@ -1,0 +1,18 @@
+1. Exploratory Data Analysis (EDA)
+---------------------------------
+- **Delays:** The average departure delay across the sample window is 21.2 minutes, and 49.6% of flights leave later than scheduled. Delay exposure remains material even after modelling improvements.
+- **Ground time:** 780 flights (9.6% of the schedule) operate within 5 minutes of the minimum ground time or dip below it, highlighting a substantial tranche of tight turns that are vulnerable to disruption.
+- **Baggage mix:** Transfer bags account for roughly 60% of the total bag volume (mean transfer ratio 0.60), confirming that connective baggage remains the dominant handling load on most routes.
+- **Passenger loads:** Load factors are consistently high (25th percentile 0.85, median 0.94, 75th percentile 0.99). Heavier loads show a slight *negative* correlation with delay (-0.18) and contribute modestly less to difficulty scores, implying that staffing plans are coping with volume but become strained when coupled with other stressors.
+- **Special services:** Special service density maintains a weak positive relationship with delay (raw correlation 0.05; partial correlation controlling for passenger volume 0.04), signalling that spikes in SSR requests still require targeted support to avoid cascading delays.
+
+2. Flight Difficulty Score Development
+--------------------------------------
+- **Daily ranking:** The refreshed `skyhack.csv` provides a date-partitioned ranking of 8,099 flights, with each day ordered from highest to lowest blended difficulty probability. The top of every list is dominated by flights that trip acute turn stress, acute service stress, or accumulate ≥5 difficulty points, giving duty managers a clear, data-backed triage order.
+- **Classification:** The action-oriented tiers now break down into 591 Difficult flights (blended probability ≈0.97), 673 Medium/Watchlist flights (probability ≈0.11 with 3–4 difficulty points), and 6,835 Easy flights. Watchlist volume averages 37–57 flights per day in the observed sample, providing a manageable set for proactive checks. Each record also surfaces the exact trigger reasons, difficulty point total, and applied rule-based boost so teams can see *why* a flight landed in its bucket.
+
+3. Post-Analysis and Operational Insights
+-----------------------------------------
+- **Destination analysis:** The most persistent difficult destinations include YHZ, GTF, SUN, GCM, and GUA—each showing ≥50% Difficult incidence. These stations combine high transfer ratios with either negative turn buffers or elevated SSR density, making them prime targets for advance resourcing.
+- **Driver identification:** Differential analysis highlights transfer_ratio (+0.15 vs. Easy flights), bags_per_pax (+0.06), pnr_pressure_index (+0.015), and ssr_per_pnr (+0.014) as the leading contributors, while Difficult flights carry 171 minutes *less* turn buffer on average. These metrics confirm that connectivity pressure and service complexity, not raw load factor, are the principal drivers of disruption risk.
+- **Actionable recommendations:** Prioritise transfer and hot-transfer bag handling windows at the focus destinations, pre-alert SSR teams when bookings breach the 0.10–0.15 density band, and add buffer staff for sub-20-minute turns. The rule-based boost now increases smoothly as risk accumulates, so operations can monitor flights whose difficulty points are trending upward and intervene before they cross the Difficult threshold.

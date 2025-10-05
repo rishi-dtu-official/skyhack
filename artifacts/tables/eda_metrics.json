@@ -6,7 +6,7 @@
   "mean_transfer_ratio": 0.6017278186464255,
   "load_factor_stats": {
     "count": 8099.0,
-    "mean": 0.8871042849999129,
+    "mean": 0.8871042849999128,
     "std": 0.14991516963948376,
     "min": 0.06,
     "25%": 0.8493975903614458,
@@ -14,7 +14,7 @@
     "75%": 0.9879518072289156,
     "max": 1.0263157894736843
   },
-  "load_delay_correlation": -0.18200393635853734,
-  "ssr_delay_correlation": 0.05235231175945343,
-  "ssr_delay_partial_correlation": 0.042666231800187075
+  "load_delay_correlation": -0.18200393635853818,
+  "ssr_delay_correlation": 0.0523523117594533,
+  "ssr_delay_partial_correlation": 0.04266623180018686
 }

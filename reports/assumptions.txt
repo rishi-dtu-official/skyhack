@@ -1,0 +1,51 @@
+SkyHack Operational Difficulty Modelling — Assumptions
+=====================================================
+
+Financial assumptions (cost model)
+----------------------------------
+- Missed difficult flights incur severity-dependent costs based on the realized delay bucket:
+  - Minor delay (15–30 minutes): $1,000.
+  - Moderate delay (30–90 minutes): $4,000.
+  - Major delay (>90 minutes): $12,000.
+  - The blended false-negative cost reported in analytics is the weighted mean of the above, computed from the holdout severity mix (defaults to $2,500 if data is absent).
+- Proactive interventions run on two tiers:
+  - "Light" mitigation (1–2 additional staff) costs $150 when turn buffers are healthy (≥20 minutes) and both transfer ratio (≤0.30) and SSR density (≤0.08) are modest.
+  - All other mitigations default to "Medium" staging at $400, covering equipment positioning and specialist crews.
+  - Blended false-positive cost is calculated from the observed mix of light vs. medium interventions (defaults to $350 if data is absent).
+- Flights-per-day expectations vary with the operating calendar:
+  - Weekday baseline: 380 flights.
+  - Peak/shoulder days (weekends or flagged high-volume days): 420 flights.
+  - The pipeline derives a weighted average from the share of weekday vs. peak days present in the analysis window.
+
+Operational difficulty definition (compound risk model)
+------------------------------------------------------
+- A flight is labelled **Difficult** when any primary trigger fires:
+  - **Acute turn stress**: scheduled_vs_min_turn_buffer < 10 minutes **and** transfer_ratio > 0.6.
+  - **Acute service stress**: ssr_per_pnr > 0.15.
+  - **Compounded risk**: the flight scores **≥ 5 points** on the Difficulty Point System (see below).
+- Difficulty Point System (captures compounding-but-not-acute pressures):
+  - +2 points if scheduled_vs_min_turn_buffer is between 10–20 minutes.
+  - +2 points if transfer_ratio is between 0.45–0.60.
+  - +2 points if ssr_per_pnr is between 0.10–0.15.
+  - +1 point if pnr_pressure_index > 0.5.
+  - +1 point if the flight is international **or** wide-body (maximum +1 even when both apply).
+- **Secondary delay check**: predicted departure delay > 25 minutes (falling back to observed positive departure delay when forecasts are unavailable) is captured as a secondary indicator. It is logged for context but does not, by itself, elevate a flight to Difficult.
+- Derived columns: `difficulty_points` (total points), `difficulty_trigger_reason` (human-readable triggers), `delay_risk_secondary_flag`, and `delay_severity` (`on_time`, `minor`, `moderate`, `major`).
+
+Classification & scoring (action-oriented model)
+------------------------------------------------
+- Difficulty classes are assigned as follows:
+  - **Difficult**: `difficulty_actual_flag = 1` (any primary trigger or compounded risk ≥5 points).
+  - **Medium / Watchlist**: flights that are not Difficult but either have a blended probability ≥ 0.50 **or** score 3–4 points on the Difficulty Point System.
+  - **Easy**: all remaining flights.
+- The rule-based score boost is graduated instead of binary:
+  - A smooth "nudge" (0 → +0.20) is applied as turn buffers, transfer mix, SSR density, PNR pressure, and difficulty points approach their risk thresholds.
+  - Example: ssr_per_pnr at 0.12 yields a small bump, while 0.15 grants the full +0.20, ensuring similar flights receive similar scores.
+- The resulting blended probability (`difficulty_probability_blended`) is clipped to [0, 1], and the activation indicator `rule_based_flag` reflects whether any positive boost was applied. The magnitude of the boost is recorded in `rule_based_boost` for transparency.
+
+Reporting & outputs
+-------------------
+- `skyhack.csv` surfaces key operational context: trigger reasons, difficulty point totals, secondary delay risk, rule-based boost magnitude, and the watchlist classification.
+- Cost-benefit analytics enumerate the dynamic cost model, severity breakdowns (all flights, positives, false negatives, false positives), and the observed intervention mix.
+
+

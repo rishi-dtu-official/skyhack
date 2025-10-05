@@ -132,14 +132,31 @@ def _prepare_model_matrix(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _rule_based_boost(df: pd.DataFrame) -> np.ndarray:
-    return (
-        (
-            (df["scheduled_vs_min_turn_buffer"] <= 5)
-            & (df["transfer_ratio"] >= 0.7)
-        )
-        | (df["pnr_pressure_index"] >= 0.6)
-        | (df["ssr_per_pnr"] >= 0.12)
-    ).astype(int).to_numpy()
+    def _smoothstep(array: np.ndarray) -> np.ndarray:
+        clipped = np.clip(array, 0.0, 1.0)
+        return clipped * clipped * (3 - 2 * clipped)
+
+    turn_buffer = df["scheduled_vs_min_turn_buffer"].fillna(30.0).to_numpy(dtype=float)
+    transfer_ratio = df["transfer_ratio"].fillna(0.0).to_numpy(dtype=float)
+    ssr_per_pnr = df["ssr_per_pnr"].fillna(0.0).to_numpy(dtype=float)
+    pnr_pressure = df["pnr_pressure_index"].fillna(0.0).to_numpy(dtype=float)
+
+    turn_buffer_score = _smoothstep((20.0 - turn_buffer) / 10.0)
+    transfer_score = _smoothstep((transfer_ratio - 0.45) / 0.15)
+    turn_combo = turn_buffer_score * transfer_score
+
+    ssr_score = _smoothstep((ssr_per_pnr - 0.10) / 0.05)
+    pnr_score = _smoothstep((pnr_pressure - 0.50) / 0.20)
+
+    difficulty_points = df.get("difficulty_points")
+    if difficulty_points is not None:
+        point_array = difficulty_points.to_numpy(dtype=float)
+        point_score = _smoothstep((point_array - 3.0) / 2.0)
+    else:
+        point_score = np.zeros_like(turn_combo)
+
+    combined_risk = np.maximum.reduce([turn_combo, ssr_score, pnr_score, point_score])
+    return RULE_BOOST * combined_risk
 
 
 def _candidate_thresholds(scores: np.ndarray) -> np.ndarray:
@@ -370,32 +387,23 @@ def _assign_daily_rankings(df: pd.DataFrame, probability_column: str) -> pd.Data
     )
     df["daily_rank"] = df.groupby("scheduled_departure_date_local").cumcount() + 1
 
-    def _categorize(day_df: pd.DataFrame) -> pd.Series:
-        n = len(day_df)
-        if n == 1:
-            return pd.Series(["Difficult"], index=day_df.index)
-        if n == 2:
-            return pd.Series(["Difficult", "Medium"], index=day_df.index)
+    df["difficulty_class"] = pd.Series("Easy", index=df.index, dtype="string")
+    difficult_mask = df[TARGET_COLUMN] == 1
 
-        difficult_cutoff = max(1, int(np.ceil(n * 0.33)))
-        medium_cutoff = max(difficult_cutoff + 1, int(np.ceil(n * 0.66)))
+    difficulty_points = df.get("difficulty_points")
+    if difficulty_points is None:
+        points_series = pd.Series(0, index=df.index)
+    else:
+        points_series = difficulty_points
 
-        labels = []
-        for idx, rank in enumerate(range(1, n + 1), start=1):
-            if idx <= difficult_cutoff:
-                labels.append("Difficult")
-            elif idx <= medium_cutoff:
-                labels.append("Medium")
-            else:
-                labels.append("Easy")
-        return pd.Series(labels, index=day_df.index)
-
-    labels = []
-    for _, group in df.groupby("scheduled_departure_date_local"):
-        labels.append(_categorize(group))
-    df["difficulty_class"] = (
-        pd.concat(labels).astype("string").reindex(df.index)
+    medium_candidates = (
+        (df[probability_column] >= 0.5)
+        | ((points_series >= 3) & (points_series <= 4))
     )
+    medium_mask = (~difficult_mask) & medium_candidates
+
+    df.loc[medium_mask, "difficulty_class"] = "Medium"
+    df.loc[difficult_mask, "difficulty_class"] = "Difficult"
 
     return df
 
@@ -442,48 +450,141 @@ def _save_cost_benefit_analysis(scored_df: pd.DataFrame, metrics: Dict[str, floa
     false_negative_rate = false_negatives / total
     false_positive_rate = false_positives / total
 
-    assumptions = {
-        "cost_per_false_positive": 200,
-        "cost_per_false_negative": 5000,
-        "flights_per_day": 400,
+    severity_costs = {
+        "minor": 1000,
+        "moderate": 4000,
+        "major": 12000,
     }
+    intervention_costs = {"light": 150, "medium": 400}
+    flights_per_day_assumptions = {"weekday": 380, "peak": 420}
 
-    baseline_cost = (
-        baseline_rate
-        * assumptions["flights_per_day"]
-        * assumptions["cost_per_false_negative"]
+    holdout_df["delay_severity"] = pd.cut(
+        holdout_df["positive_departure_delay"].fillna(0),
+        bins=[0, 15, 30, 90, np.inf],
+        labels=["on_time", "minor", "moderate", "major"],
+        right=False,
+        include_lowest=True,
+    ).astype("string")
+
+    severity_cost_map = {
+        "on_time": 0.0,
+        "minor": float(severity_costs["minor"]),
+        "moderate": float(severity_costs["moderate"]),
+        "major": float(severity_costs["major"]),
+    }
+    holdout_df["severity_cost"] = holdout_df["delay_severity"].map(severity_cost_map).fillna(0.0)
+
+    light_intervention_mask = (
+        (holdout_df["scheduled_vs_min_turn_buffer"].fillna(np.inf) >= 20)
+        & (holdout_df["transfer_ratio"].fillna(0) <= 0.3)
+        & (holdout_df["ssr_per_pnr"].fillna(0) <= 0.08)
     )
+    holdout_df["intervention_level"] = pd.Series(
+        np.where(light_intervention_mask, "light", "medium"), index=holdout_df.index
+    ).astype("string")
+    holdout_df["intervention_cost"] = holdout_df["intervention_level"].map(
+        {"light": float(intervention_costs["light"]), "medium": float(intervention_costs["medium"])}
+    )
+
+    positive_mask = holdout_df[TARGET_COLUMN] == 1
+    severity_positive = holdout_df.loc[positive_mask, "severity_cost"]
+    avg_fn_cost = float(severity_positive.mean()) if not severity_positive.empty else 2500.0
+
+    fp_mask = (holdout_df["difficulty_prediction"] == 1) & (holdout_df[TARGET_COLUMN] == 0)
+    fn_mask = (holdout_df["difficulty_prediction"] == 0) & positive_mask
+
+    intervention_positive = holdout_df.loc[fp_mask, "intervention_cost"]
+    avg_fp_cost = float(intervention_positive.mean()) if not intervention_positive.empty else 350.0
+
+    unique_dates = (
+        holdout_df["scheduled_departure_date_local"].dt.normalize().dropna().unique()
+    )
+    total_days = len(unique_dates)
+    if total_days > 0:
+        weekday_days = int(sum(pd.Timestamp(day).weekday() < 5 for day in unique_dates))
+        peak_days = int(total_days - weekday_days)
+        weighted_flights = (
+            weekday_days * flights_per_day_assumptions["weekday"]
+            + peak_days * flights_per_day_assumptions["peak"]
+        )
+        expected_flights_per_day = weighted_flights / total_days
+    else:
+        weekday_days = peak_days = 0
+        expected_flights_per_day = float(
+            (flights_per_day_assumptions["weekday"] + flights_per_day_assumptions["peak"]) / 2
+        )
+
+    baseline_cost = baseline_rate * expected_flights_per_day * avg_fn_cost
     model_cost = (
-        false_negative_rate
-        * assumptions["flights_per_day"]
-        * assumptions["cost_per_false_negative"]
-        + false_positive_rate
-        * assumptions["flights_per_day"]
-        * assumptions["cost_per_false_positive"]
+        false_negative_rate * expected_flights_per_day * avg_fn_cost
+        + false_positive_rate * expected_flights_per_day * avg_fp_cost
+    )
+
+    def _severity_counts(mask: pd.Series) -> Dict[str, int]:
+        counts = holdout_df.loc[mask, "delay_severity"].value_counts()
+        return {str(k): int(v) for k, v in counts.items()}
+
+    all_mask = pd.Series(True, index=holdout_df.index)
+
+    intervention_mix = holdout_df.loc[fp_mask, "intervention_level"].value_counts()
+    intervention_counts = {str(k): int(v) for k, v in intervention_mix.items()}
+
+    delay_source = (
+        "predicted_departure_delay_minutes"
+        if "predicted_departure_delay_minutes" in holdout_df.columns
+        else "positive_departure_delay"
     )
 
     results = {
-        "assumptions": assumptions,
+        "assumptions": {
+            "delay_severity_costs": severity_costs,
+            "intervention_costs": intervention_costs,
+            "flights_per_day": {
+                "weekday": flights_per_day_assumptions["weekday"],
+                "peak": flights_per_day_assumptions["peak"],
+                "weighted_average": float(expected_flights_per_day),
+                "observed_days": {
+                    "total": int(total_days),
+                    "weekday": int(weekday_days),
+                    "peak": int(peak_days),
+                },
+            },
+            "delay_risk_minutes_source": delay_source,
+        },
         "baseline_delay_rate": baseline_rate,
         "actual_delay_rate": actual_delay_rate,
         "false_negative_rate": false_negative_rate,
         "false_positive_rate": false_positive_rate,
         "true_positive_rate": true_positives / total,
+        "average_cost_per_false_negative": avg_fn_cost,
+        "average_cost_per_false_positive": avg_fp_cost,
         "expected_daily_cost_baseline": baseline_cost,
         "expected_daily_cost_model": model_cost,
         "expected_daily_savings": baseline_cost - model_cost,
         "expected_annual_savings": (baseline_cost - model_cost) * 365,
+        "daily_false_negative_cost": false_negative_rate * expected_flights_per_day * avg_fn_cost,
+        "daily_false_positive_cost": false_positive_rate * expected_flights_per_day * avg_fp_cost,
         "holdout_flight_count": total,
-        "holdout_positive_count": int((holdout_df[TARGET_COLUMN] == 1).sum()),
+        "holdout_positive_count": int(positive_mask.sum()),
         "holdout_false_negative_count": false_negatives,
         "holdout_false_positive_count": false_positives,
         "holdout_true_positive_count": true_positives,
+        "holdout_false_negative_cost_total": float(holdout_df.loc[fn_mask, "severity_cost"].sum()),
+        "holdout_false_positive_cost_total": float(holdout_df.loc[fp_mask, "intervention_cost"].sum()),
+        "severity_breakdown": {
+            "all_flights": _severity_counts(all_mask),
+            "positives": _severity_counts(positive_mask),
+            "false_negatives": _severity_counts(fn_mask),
+            "false_positives": _severity_counts(fp_mask),
+        },
+        "intervention_mix_false_positive": intervention_counts,
     }
 
     cost_path = PATHS.artifacts_tables / "cost_benefit_analysis.json"
     cost_path.parent.mkdir(parents=True, exist_ok=True)
     with cost_path.open("w", encoding="utf-8") as fp:
         json.dump(results, fp, indent=2)
+
 
 def apply_scoring(df: pd.DataFrame, model_outputs: ModelOutputs) -> pd.DataFrame:
     base_df = model_outputs.feature_frame.copy()
@@ -492,10 +593,11 @@ def apply_scoring(df: pd.DataFrame, model_outputs: ModelOutputs) -> pd.DataFrame
     base_df["difficulty_probability_raw_model"] = raw_scores
     base_df["difficulty_probability_model"] = calibrated_scores
 
-    rule_flags = _rule_based_boost(base_df)
-    base_df["rule_based_flag"] = rule_flags
+    rule_boost = _rule_based_boost(base_df)
+    base_df["rule_based_boost"] = rule_boost
+    base_df["rule_based_flag"] = (rule_boost > 0).astype(int)
     base_df["difficulty_probability_blended"] = np.clip(
-        base_df["difficulty_probability_model"] + RULE_BOOST * rule_flags, 0, 1
+        base_df["difficulty_probability_model"] + rule_boost, 0, 1
     )
     base_df["difficulty_prediction"] = (
         base_df["difficulty_probability_blended"] >= model_outputs.threshold
@@ -558,11 +660,16 @@ def apply_scoring(df: pd.DataFrame, model_outputs: ModelOutputs) -> pd.DataFrame
         "fleet_type",
         "dataset_split",
         "difficulty_actual_flag",
+        "difficulty_points",
+        "difficulty_trigger_reason",
+        "delay_risk_secondary_flag",
+        "delay_severity",
         "difficulty_index",
         "difficulty_index_rank",
-    "difficulty_probability_raw_model",
+        "difficulty_probability_raw_model",
         "difficulty_probability_model",
         "difficulty_probability_blended",
+        "rule_based_boost",
         "rule_based_flag",
         "difficulty_prediction",
         "difficulty_percentile",
@@ -589,9 +696,9 @@ def apply_scoring(df: pd.DataFrame, model_outputs: ModelOutputs) -> pd.DataFrame
         "departure_daypart_code",
         "departure_wave_bucket_code",
         "station_departure_rank_pct",
-    "minutes_since_first_departure",
-    "minutes_since_bank_start",
-    "is_first_departure_of_day",
+        "minutes_since_first_departure",
+        "minutes_since_bank_start",
+        "is_first_departure_of_day",
         "departure_hour_local",
         "departure_minutes_from_midnight",
         "departure_hour_sin",

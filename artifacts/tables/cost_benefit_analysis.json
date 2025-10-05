@@ -1,21 +1,71 @@
 {
   "assumptions": {
-    "cost_per_false_positive": 200,
-    "cost_per_false_negative": 5000,
-    "flights_per_day": 400
+    "delay_severity_costs": {
+      "minor": 1000,
+      "moderate": 4000,
+      "major": 12000
+    },
+    "intervention_costs": {
+      "light": 150,
+      "medium": 400
+    },
+    "flights_per_day": {
+      "weekday": 380,
+      "peak": 420,
+      "weighted_average": 390.0,
+      "observed_days": {
+        "total": 8,
+        "weekday": 6,
+        "peak": 2
+      }
+    },
+    "delay_risk_minutes_source": "positive_departure_delay"
   },
-  "baseline_delay_rate": 0.33433595557612217,
+  "baseline_delay_rate": 0.08283202221193892,
   "actual_delay_rate": 0.3024062933826932,
-  "false_negative_rate": 0.01018047200370199,
-  "false_positive_rate": 0.27348449791763074,
-  "true_positive_rate": 0.3241554835724202,
-  "expected_daily_cost_baseline": 668671.9111522443,
-  "expected_daily_cost_model": 42239.70384081444,
-  "expected_daily_savings": 626432.2073114299,
-  "expected_annual_savings": 228647755.6686719,
+  "false_negative_rate": 0.0006941230911614993,
+  "false_positive_rate": 0.013882461823229986,
+  "true_positive_rate": 0.08213789912077742,
+  "average_cost_per_false_negative": 4279.329608938548,
+  "average_cost_per_false_positive": 400.0,
+  "expected_daily_cost_baseline": 138241.5548357242,
+  "expected_daily_cost_model": 3324.1128279634663,
+  "expected_daily_savings": 134917.44200776075,
+  "expected_annual_savings": 49244866.33283267,
+  "daily_false_negative_cost": 1158.4487835395885,
+  "daily_false_positive_cost": 2165.664044423878,
   "holdout_flight_count": 4322,
-  "holdout_positive_count": 1445,
-  "holdout_false_negative_count": 44,
-  "holdout_false_positive_count": 1182,
-  "holdout_true_positive_count": 1401
+  "holdout_positive_count": 358,
+  "holdout_false_negative_count": 3,
+  "holdout_false_positive_count": 60,
+  "holdout_true_positive_count": 355,
+  "holdout_false_negative_cost_total": 12000.0,
+  "holdout_false_positive_cost_total": 24000.0,
+  "severity_breakdown": {
+    "all_flights": {
+      "on_time": 3015,
+      "moderate": 535,
+      "major": 408,
+      "minor": 364
+    },
+    "positives": {
+      "on_time": 133,
+      "major": 94,
+      "moderate": 91,
+      "minor": 40
+    },
+    "false_negatives": {
+      "on_time": 2,
+      "major": 1
+    },
+    "false_positives": {
+      "on_time": 29,
+      "moderate": 13,
+      "major": 12,
+      "minor": 6
+    }
+  },
+  "intervention_mix_false_positive": {
+    "medium": 60
+  }
 }

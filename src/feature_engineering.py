@@ -497,7 +497,71 @@ def combine_features(
     df["difficulty_index_rank"] = df.groupby("scheduled_departure_date_local")[
         "difficulty_index"
     ].rank(method="average", pct=True)
-    df["difficulty_actual_flag"] = (df["difficulty_index_rank"] >= 2.0 / 3.0).astype(int)
+
+    turn_buffer = df["scheduled_vs_min_turn_buffer"].fillna(np.inf)
+    transfer_ratio = df["transfer_ratio"].fillna(0)
+    ssr_per_pnr = df["ssr_per_pnr"].fillna(0)
+    pnr_pressure = df["pnr_pressure_index"].fillna(0)
+    international_flag = df["is_international"].fillna(0).astype(int)
+    wide_body_flag = df["is_wide_body"].fillna(0).astype(int)
+
+    acute_turn_flag = (turn_buffer < 10) & (transfer_ratio > 0.6)
+    acute_service_flag = ssr_per_pnr > 0.15
+
+    difficulty_points = (
+        ((turn_buffer >= 10) & (turn_buffer < 20)).astype(int) * 2
+        + ((transfer_ratio >= 0.45) & (transfer_ratio < 0.6)).astype(int) * 2
+        + ((ssr_per_pnr >= 0.10) & (ssr_per_pnr < 0.15)).astype(int) * 2
+        + (pnr_pressure > 0.5).astype(int)
+        + ((international_flag == 1) | (wide_body_flag == 1)).astype(int)
+    )
+    compounded_risk_flag = difficulty_points >= 5
+
+    predicted_delay_proxy = df.get("predicted_departure_delay_minutes")
+    if predicted_delay_proxy is None:
+        predicted_delay_proxy = df["positive_departure_delay"].fillna(0)
+    else:
+        predicted_delay_proxy = predicted_delay_proxy.fillna(0)
+    delay_risk_flag = predicted_delay_proxy > 25
+
+    difficulty_mask = acute_turn_flag | acute_service_flag | compounded_risk_flag
+
+    df["difficulty_points"] = difficulty_points.astype(int)
+    df["difficulty_actual_flag"] = difficulty_mask.astype(int)
+    df["delay_risk_secondary_flag"] = delay_risk_flag.astype(int)
+
+    trigger_labels = []
+    for turn_flag, ssr_flag, comp_flag, points_value, delay_flag in zip(
+        acute_turn_flag.to_numpy(),
+        acute_service_flag.to_numpy(),
+        compounded_risk_flag.to_numpy(),
+        difficulty_points.to_numpy(),
+        delay_risk_flag.to_numpy(),
+    ):
+        reasons = []
+        if turn_flag:
+            reasons.append("Acute turn stress (<10m buffer & transfer >0.6)")
+        if ssr_flag:
+            reasons.append("Acute service stress (SSR >0.15)")
+        if comp_flag:
+            reasons.append(f"Compounded risk (points={int(points_value)})")
+        elif points_value >= 3:
+            reasons.append(f"Difficulty points score {int(points_value)}")
+        if delay_flag:
+            reasons.append("Delay risk >25m (secondary)")
+        trigger_labels.append(", ".join(reasons) if reasons else "None")
+
+    df["difficulty_trigger_reason"] = pd.Series(trigger_labels, index=df.index, dtype="string")
+
+    delay_bins = [0, 15, 30, 90, np.inf]
+    delay_labels = ["on_time", "minor", "moderate", "major"]
+    df["delay_severity"] = pd.cut(
+        df["positive_departure_delay"].fillna(0),
+        bins=delay_bins,
+        labels=delay_labels,
+        right=False,
+        include_lowest=True,
+    ).astype("string")
 
     df["flight_identifier"] = (
         df["company_id"].astype(str)

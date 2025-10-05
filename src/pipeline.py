@@ -18,6 +18,7 @@ from .eda import run_eda
 from .feature_engineering import FlightFeatureFrames, build_feature_frames
 from .insights import destination_difficulty_summary, difficulty_driver_summary, recommended_actions
 from .scoring import apply_scoring, train_difficulty_model
+from .visualisations import generate_visualisations
 
 console = Console()
 
@@ -81,6 +82,9 @@ def run_pipeline() -> None:
 
     console.log("Running exploratory data analysis")
     run_eda(scored)
+
+    console.log("Refreshing presentation visualisations")
+    generate_visualisations(scored, model_outputs.metrics)
 
     console.log("Deriving insights")
     dest_summary = destination_difficulty_summary(scored)
