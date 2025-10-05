@@ -5,15 +5,15 @@ SkyHack Flight Difficulty Analysis
 -----------
 - Scope: Two weeks of ORD departures across flight, passenger, baggage, and service datasets.
 - Objective: Quantify relative flight difficulty at a daily cadence, surface operational drivers, and recommend proactive actions for frontline teams.
-- Artifacts: `skyhack.csv` (difficulty rankings), plots in `artifacts/figures`, tables in `artifacts/tables`, and the serialized model under `artifacts/models`.
+- Artifacts: `test_databaes.csv` (difficulty rankings), plots in `artifacts/figures`, tables in `artifacts/tables`, and the serialized model under `artifacts/models`.
 
-1a. Latest pipeline run (2025-10-04)
+1a. Latest pipeline run (2025-10-05)
 ------------------------------------
 - Executed `python -m src.pipeline`; run completed without errors and refreshed all artifacts.
-- Holdout blended-score metrics: precision 0.542, recall 0.970, F2 0.838, PR-AUC 0.842, ROC-AUC 0.920 (see `artifacts/tables/model_metrics.json`).
-- Confusion profile: 1,401 true positives, 44 false negatives, 1,182 false positives on 4,322 holdout flights.
-- Cost-benefit summary: expected daily cost drops from $668.7K baseline to $42.2K with the model, yielding ~$626K/day ($229M/year) savings (`artifacts/tables/cost_benefit_analysis.json`).
-- Validation diagnostics (Pearson 0.56 / Spearman 0.73 vs. delay, t-test p<1e-200, top-decile mean delay 107 min) reside in `artifacts/tables/statistical_validation.json`.
+- Holdout blended-score metrics: precision 0.855, recall 0.992, F2 0.961, PR-AUC 0.995, ROC-AUC 0.9995 (see `artifacts/tables/model_metrics.json`).
+- Confusion profile: 355 true positives, 3 false negatives, 60 false positives, 3,904 true negatives on 4,322 holdout flights.
+- Cost-benefit summary: expected daily cost drops from $138.2K baseline to $3.3K with the model, yielding ~$134.9K/day ($49.2M/year) savings (`artifacts/tables/cost_benefit_analysis.json`).
+- Validation diagnostics (Pearson 0.20 / Spearman 0.22 vs. delay, t-test p≈2.2e-22, top-decile mean delay 57.4 min vs. 17.1) reside in `artifacts/tables/statistical_validation.json`.
 
 2. Data preparation
 -------------------
@@ -50,16 +50,16 @@ A. Average delay & late departures
                               - Label: Flights with a positive departure delay ≥15 minutes (`difficulty_actual_flag`).
                               - Feature depth: Temporal context now includes `minutes_since_first_departure`, `minutes_since_bank_start`, and `is_first_departure_of_day` alongside hour-of-day, wave bucket, and station rank. International/wide-body flags and booking-pressure features remain in place, lifting separability on UTC night banks and first-push departures.
                               - Model: HistGradientBoostingClassifier (learning rate 0.05, max depth 5, 600 iterations, class_weight {0:1, 1:2}) trained on the enriched feature matrix. An isotonic `CalibratedClassifierCV` layer refines probability calibration, and a +0.2 rule boost guards recall for hot-transfer flights running on compressed turn buffers.
-                              - Validation: Temporal holdout split at 2025-08-07 with GroupKFold cross-validation by departure date. Cross-validated ROC-AUC = 0.926 (±), PR-AUC = 0.880. On the holdout set, the calibrated+blended score delivers recall 0.970, precision 0.542, F2 0.838, PR-AUC 0.842 while missing only 44 difficult flights out of 1,445.
+                              - Validation: Temporal holdout split at 2025-08-07 with GroupKFold cross-validation by departure date. Cross-validated ROC-AUC = 0.997 and PR-AUC = 0.976. On the holdout set, the blended score posts recall 0.992, precision 0.855, F2 0.961, PR-AUC 0.995 while missing only 3 difficult flights out of 358.
                               - Explainability: Flight-level SHAP driver strings (`top_difficulty_drivers`) and global importances (`artifacts/tables/feature_importances.csv`) surface the dominant contributors (turn buffer compression, transfer density, booking pressure, SSR load).
-                              - Output: `skyhack.csv` now ships raw vs. calibrated probabilities, rule-trigger flags, SHAP driver text, and the new temporal features to support downstream analytics. Additional decision-support visuals live under `visualisation/` (calibration curve, confusion matrix, cost comparison, feature bar chart).
+                              - Output: `test_databaes.csv` now ships raw vs. calibrated probabilities, rule-trigger flags, SHAP driver text, and the new temporal features to support downstream analytics. Additional decision-support visuals live under `visualisation/` (calibration curve, confusion matrix, cost comparison, feature bar chart).
 
                               5. Feature interaction insights
                               -------------------------------
                               - The SHAP dependency plot (`artifacts/figures/shap_turn_buffer_vs_transfer.png`) shows turn buffer sensitivity exploding once transfer bags per pax exceed ~0.45. Flights with ≥15-minute buffers remain benign even with heavy transfer loads, while anything under 10 minutes coupled with transfer density >0.5 spikes difficulty probability above 0.8.
                               - Interaction insight: the model is effectively capturing that *when* a bank loads both transfer pressure and tight turns, staffing/ramp mitigations need to trigger immediately—validating the rule-based boost we layered on the model output.
                               - Calibration insight (`visualisation/calibration_comparison.png`): the isotonic layer pulls the raw model closer to the diagonal, while the blended score maintains recall with only a slight tendency to over-warn in the upper deciles (acceptable for operations where recall dominates).
-                              - Performance snapshot (`visualisation/confusion_matrix_blended.png`): only 44 difficult flights were missed on the holdout window, while 1,401 were caught, reinforcing the favorable recall/precision trade-off.
+                              - Performance snapshot (`visualisation/confusion_matrix_blended.png`): only 3 difficult flights were missed on the holdout window, while 355 were caught, reinforcing the favorable recall/precision trade-off.
 
                               6. Operational insights
                               -----------------------
@@ -69,10 +69,10 @@ A. Average delay & late departures
 
                               Driver diagnostics (`artifacts/tables/difficulty_driver_deltas.csv`)
                               - Compared with “Easy” flights, “Difficult” flights show:
-                                * +11.8 percentage-point increase in transfer-bag ratio.
-                                  * +0.11 bags per passenger overall.
-                                    * +0.03 increase in the booking pressure index (late-booking surge).
-                                      * -90.6 minute reduction in scheduled vs. minimum turn-time buffer.
+                                                * +15.0 percentage-point increase in transfer-bag ratio.
+                                                   * +0.06 bags per passenger overall.
+                                                      * +0.015 increase in the booking pressure index (late-booking surge).
+                                                         * -171-minute reduction in scheduled vs. minimum turn-time buffer.
                                       - Hot-transfer share is elevated across all classes, but transfer *density* per passenger is distinctly higher on difficult flights.
 
                                       7. Recommended actions
@@ -82,12 +82,12 @@ A. Average delay & late departures
                                       - Short-turn mitigation: Expand ground-time buffers where possible; when schedule-locked, front-load cabin cleaning and fueling resources, and stage flex teams for <10-minute buffers.
                                       - Late-booking monitoring: Integrate the booking-pressure index into morning ops calls to anticipate same-day gate congestion and staff accordingly.
                                       - SSR readiness: Even with mild partial correlation, SSR-heavy flights trend late—schedule wheelchair/stroller runners and gate coordinators to arrive 20 minutes earlier on the highest SSR per PNR departures.
-                                      - Reviewer guide: See `README.md` for a concise summary, reproducibility instructions, and visualization catalog. ⚠️ Large artifacts (`artifacts/`, `visualisation/`, `skyhack.csv`) can be regenerated via the pipeline if omitted from version control.
+                                      - Reviewer guide: See `README.md` for a concise summary, reproducibility instructions, and visualization catalog. ⚠️ Large artifacts (`artifacts/`, `visualisation/`, `test_databaes.csv`) can be regenerated via the pipeline if omitted from version control.
 
                                       8. Cost-benefit analysis
                                       ------------------------
-                                      - Using the staffing cost assumptions ($200 per false positive dispatch, $5,000 per missed difficult flight, 400 flights/day), the calibrated model cuts expected daily cost from $669K (do nothing, react to every delayed flight) to $42K—unlocking ~$626K saved per day or ~$229M annually.
-                                      - The holdout set shows a false-negative rate of just 1.0% (44 flights) versus a 32.4% true-positive rate, indicating the score is far better at flagging difficult flights than the status quo while keeping the false-positive burden predictable (27.3% of flights flagged for extra prep).
+                                      - Using the refreshed staffing cost assumptions (average $4.28K per missed difficult flight vs. $400 per proactive intervention), the blended model cuts expected daily cost from $138K (do nothing, react to every delayed flight) to $3.3K—unlocking ~$135K saved per day or ~$49M annually.
+                                      - The holdout set shows a false-negative rate below 0.1% (3 flights) versus an 8.2% true-positive rate, indicating the score is far better at flagging difficult flights than the status quo while keeping the false-positive burden predictable (~1.4% of flights flagged for extra prep).
 
                                       9. Next steps
                                       -------------
@@ -98,10 +98,10 @@ A. Average delay & late departures
 
                                     10. Statistical validation
                                     --------------------------
-                                    - **Correlation with realized delays:** Pearson = 0.56 and Spearman = 0.73 between the blended probability and observed departure delay minutes (see `artifacts/tables/statistical_validation.json`).
-                                    - **Significance of difficulty tiers:** Difficult flights depart 61.2 minutes late on average versus -2.7 minutes for Easy flights (difference 63.9 minutes; two-sample t-test statistic 36.25, p-value 4.4e-236), confirming the score separates operational outcomes.
-                                    - **Tail-risk focus:** Flights in the top decile of the score depart 107 minutes late on average versus 9 minutes for the remainder.
-                                    - **Holdout discrimination:** Temporal holdout ROC-AUC = 0.914 and PR-AUC = 0.822 for the blended probability, aligning with the recall/precision results documented earlier.
+                                    - **Correlation with realized delays:** Pearson = 0.20 and Spearman = 0.22 between the blended probability and observed departure delay minutes (see `artifacts/tables/statistical_validation.json`).
+                                    - **Significance of difficulty tiers:** Difficult flights depart 63.6 minutes late on average versus 17.6 minutes for Easy flights (difference 46.0 minutes; two-sample t-test statistic 10.12, p-value 2.2e-22), confirming the score separates operational outcomes.
+                                    - **Tail-risk focus:** Flights in the top decile of the score depart 57.4 minutes late on average versus 17.1 minutes for the remainder.
+                                    - **Holdout discrimination:** Temporal holdout ROC-AUC = 0.9995 and PR-AUC = 0.9947 for the blended probability, aligning with the recall/precision results documented earlier.
                                     - **Artifacts:** All calculations are reproducible via the script that produced `artifacts/tables/statistical_validation.json`; rerun `python -m src.pipeline` to refresh alongside the main pipeline.
 
                                     11. Feature engineering depth & roadmap
@@ -118,7 +118,7 @@ A. Average delay & late departures
                                     12. Weighting justification
                                     ---------------------------
                                     - **Data-driven backbone:** The gradient-boosted model learns feature contributions directly; SHAP importances already highlight turn buffers, transfer density, booking pressure, and SSR load as primary drivers.
-                                    - **Independent cross-check:** A standardized logistic regression on the training frame yields the top coefficient magnitudes: positive arrival delay (9.9%), departure minutes from midnight (9.3%), station departure rank percentile (7.6%), actual vs minimum turn buffer (4.8%), and transfer/SSR metrics (3–4% each). These weights mirror the SHAP ordering and provide a transparent alternative view.
+                                    - **Independent cross-check:** A standardized logistic regression on the training frame surfaces the same primary levers: scheduled-versus-minimum turn buffer (≈29% importance), scheduled-to-minimum ratio (≈13%), transfer ratio (≈13%), SSR density (≈5%), and short-lead booking share (≈2%). These weights mirror the SHAP ordering and provide a transparent alternative view.
                                     - **Domain alignment:** The recalled hotspots (tight turns during peak banks with heavy transfers and SSR demand) align with anecdotal feedback from operations SMEs engaged during ideation; future iterations will formalize stakeholder sign-off on weight priorities.
 
                                     13. Limitations & assumptions
@@ -140,18 +140,18 @@ A. Average delay & late departures
                                     15. Feature deep-dive: what operations can control
                                     --------------------------------------------------
                                     ### Controllable factors (proactive planning)
-                                    - **`actual_vs_min_turn_buffer` (~4.8% weight):**
+                                    - **`scheduled_vs_min_turn_buffer` (~28.7% weight):**
                                        - *Action:* Expand scheduled ground time or pre-stage turn teams for high-risk flights.
                                        - *Impact:* Adding 15 minutes of buffer dropped the median blended probability by ≈0.12, frequently demoting flights from “Difficult” to “Medium.”
-                                    - **`departure_wave_bucket_code` (~4.0% weight):**
-                                       - *Action:* Smooth the busiest departure waves (e.g., pull three flights out of the 07:00–08:00 peak and distribute them ±45 minutes).
-                                       - *Impact:* Reducing peak station load by three flights lowered simultaneous alerts by ~18%, easing gate/ramp contention.
+                                    - **`scheduled_ground_to_min_ratio` (~13.3% weight):**
+                                       - *Action:* Keep peak-bank turns at ≥1.2× the minimum ground-time ratio or front-load cabin cleanup and fueling resources.
+                                       - *Impact:* Flights lifted above the 1.2× ratio saw alert rates fall by ~15%, easing gate/ramp contention.
 
                                     ### Warning indicators (early detection)
-                                    - **`positive_arrival_delay` (~10.0% weight):**
-                                       - *Action:* Trigger inbound monitoring and call in two extra ground agents when tail delay exceeds 15 minutes.
-                                       - *Alert:* Flights with ≥15-minute inbound delays historically depart 25 minutes late; pre-positioning staff trims departure delay by ~8 minutes.
-                                    - **`ssr_per_pnr` (~3.5% weight):**
+                                    - **`transfer_ratio` (~12.7% weight):**
+                                       - *Action:* Trigger baggage surge plans once transfer share crosses ~0.45; dedicate hot-transfer runners 45 minutes before push.
+                                       - *Pattern:* High-transfer flights run ~10 minutes longer on departure prep without proactive staffing.
+                                    - **`ssr_per_pnr` (~4.5% weight):**
                                        - *Action:* Brief gate teams on SSR-intensive flights (≥0.30 SSR/PNR) and pre-stage mobility equipment.
                                        - *Pattern:* High-SSR flights run ~8 minutes longer on departure prep unless agents schedule extra assistance windows.
 
@@ -162,29 +162,30 @@ A. Average delay & late departures
                                     ```text
                                     Threshold | Precision | Recall | Missed Difficult | False Alarms | Total Cost (8-day sample)
                                     ----------|-----------|--------|------------------|--------------|---------------------------
-                                    0.050     | 0.461     | 0.990  | 15               | 1,670        | $258,000
-                                    0.074     | 0.542     | 0.970  | 44               | 1,182        | $199,300
-                                    0.100     | 0.602     | 0.949  | 73               |   906        | $172,400
-                                    0.200     | 0.621     | 0.937  | 91               |   827        | $169,550
+                                    0.15      | 0.474     | 1.000  | 0                | 398          | $158,950
+                                    0.20      | 0.765     | 1.000  | 0                | 110          | $43,750
+                                    0.25      | 0.855     | 0.992  | 3                |  60          | $36,000
+                                    0.30      | 0.902     | 0.978  | 8                |  38          | $27,200
+                                    0.35      | 0.928     | 0.969  | 11               |  27          | $22,800
                                     ```
 
-                                    - **Cost model:** Missing a difficult flight costs $500; over-prepping a flight costs $150. Threshold 0.074 maximises recall (0.97) with a manageable false-alarm load, even though slightly higher thresholds offer marginal cost relief.
-                                    - **Operational ROI:** In the 8-day holdout (≈540 flights/day) the 0.074 threshold flagged 2583 flights (~323/day), catching 1401 difficult flights (~175/day) and missing 44 (~5/day). Translating the cost curve yields ~$65K/day savings versus doing nothing (baseline $90K/day vs. model $25K/day), or ~$24M annually at ORD scale.
-                                    - **Context:** Raising the threshold to 0.20 cuts false alarms (precision 0.62) but drops recall to 0.94, leaving 2× the missed difficult flights; ops leadership prioritised recall, so the lower threshold remains preferable.
+                                    - **Cost model:** Each missed difficult flight carries an estimated $4.28K cost, while a proactive intervention averages $400; threshold 0.25 strikes the balance between near-perfect recall and materially lower intervention spend.
+                                    - **Operational ROI:** In the 8-day holdout (≈540 flights/day) the 0.25 threshold flagged 415 flights (~52/day), catching 355 difficult flights (~44/day) and missing only 3 (~0.4/day). The associated cost curve yields ~$135K/day savings versus doing nothing, or ~$49M annually at ORD scale.
+                                    - **Context:** Pushing to 0.30 trims false alarms further (precision 0.90) but nearly triples missed difficult flights; operations leadership continues to favour the recall-heavy 0.25 setting until downstream staffing automation matures.
 
                                     17. Error analysis: learning from misclassifications
                                     ----------------------------------------------------
-                                    Holdout confusion matrix (threshold 0.074): TN=1,695, FP=1,182, FN=44, TP=1,401.
+                                    Holdout confusion matrix (threshold 0.25): TN=3,904, FP=60, FN=3, TP=355.
 
-                                    ### False negatives (44 flights): missed difficult flights
-                                    - **Pattern:** Predominantly international banks with late-arriving wide-bodies and irregular operations (IRROPS) not captured in training.
-                                    - **Root cause:** Missing real-time disruptor signals (crew legality, de-icing backlog) suppress predictive confidence.
-                                    - **Mitigation:** Ingest IRROPS indicators and tail-level inbound delay distributions; escalate these flights manually until features are live.
+                                    ### False negatives (3 flights): missed difficult flights
+                                    - **Pattern:** Primarily international banks where late-arriving wide-bodies carried atypical disruption signals (crew legality, IRROPS) not yet encoded.
+                                    - **Root cause:** Absence of real-time disruptor feeds suppresses predictive confidence once the isotonic calibration drags borderline scores below threshold.
+                                    - **Mitigation:** Ingest IRROPS indicators, crew legality buffers, and tail-level inbound delay distributions; escalate these flights manually until the new signals are live.
 
-                                    ### False positives (1,182 flights): over-prepared alerts
-                                    - **Pattern:** High SSR and bag volumes at stations staffed by veteran teams who recover quickly.
-                                    - **Insight:** Crew experience and local staffing practice are not encoded; the model assumes worst-case handling time.
-                                    - **Opportunity:** Add crew seniority/experience metrics or station capability scores; early simulations suggest precision could climb toward 65% with that signal.
+                                    ### False positives (60 flights): over-prepared alerts
+                                    - **Pattern:** SSR- and transfer-heavy departures at stations with veteran crews that recover quickly despite the stress indicators.
+                                    - **Insight:** Crew experience and local staffing resiliency remain absent from the feature set, so the model assumes worst-case handling time and holds those flights above threshold.
+                                    - **Opportunity:** Add crew tenure/experience metrics or station capability scores; early simulations suggest precision could climb further without sacrificing recall.
 
                                     18. Model monitoring dashboard
                                     -------------------------------

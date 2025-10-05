@@ -8,7 +8,7 @@
 
 2. Flight Difficulty Score Development
 --------------------------------------
-- **Daily ranking:** The refreshed `skyhack.csv` provides a date-partitioned ranking of 8,099 flights, with each day ordered from highest to lowest blended difficulty probability. The top of every list is dominated by flights that trip acute turn stress, acute service stress, or accumulate ≥5 difficulty points, giving duty managers a clear, data-backed triage order.
+- **Daily ranking:** The refreshed `test_databaes.csv` provides a date-partitioned ranking of 8,099 flights, with each day ordered from highest to lowest blended difficulty probability. The top of every list is dominated by flights that trip acute turn stress, acute service stress, or accumulate ≥5 difficulty points, giving duty managers a clear, data-backed triage order.
 - **Classification:** The action-oriented tiers now break down into 591 Difficult flights (blended probability ≈0.97), 673 Medium/Watchlist flights (probability ≈0.11 with 3–4 difficulty points), and 6,835 Easy flights. Watchlist volume averages 37–57 flights per day in the observed sample, providing a manageable set for proactive checks. Each record also surfaces the exact trigger reasons, difficulty point total, and applied rule-based boost so teams can see *why* a flight landed in its bucket.
 
 3. Post-Analysis and Operational Insights

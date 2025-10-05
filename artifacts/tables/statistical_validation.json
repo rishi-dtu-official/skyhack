@@ -1,39 +1,39 @@
 {
   "correlation": {
-    "pearson_delay_vs_blended": 0.5601750766941426,
-    "spearman_delay_vs_blended": 0.7305495488873384
+    "pearson_delay_vs_blended": 0.20113380608128398,
+    "spearman_delay_vs_blended": 0.22251120922267642
   },
   "ttest_difficult_vs_easy": {
-    "statistic": 36.252374087827356,
-    "pvalue": 4.438721982557505e-236,
-    "mean_delay_difficult": 61.193215339233035,
-    "mean_delay_easy": -2.7245808062789867
+    "statistic": 10.122315851498605,
+    "pvalue": 2.202045096408591e-22,
+    "mean_delay_difficult": 63.60406091370558,
+    "mean_delay_easy": 17.624871982443306
   },
   "top_decile_delay": {
-    "threshold": 0.8691099476439791,
-    "mean_delay_top_decile": 107.0366699702676,
-    "mean_delay_rest": 8.956383273331488
+    "threshold": 0.1951614914577878,
+    "mean_delay_top_decile": 57.425400739827374,
+    "mean_delay_rest": 17.14832601536773
   },
   "holdout_metrics": {
-    "roc_auc": 0.9201318655414077,
-    "pr_auc": 0.8417083883646415
+    "roc_auc": 0.999500039461297,
+    "pr_auc": 0.9946667287851445
   },
   "holdout_confusion_matrix": {
-    "true_negative": 1695,
-    "false_positive": 1182,
-    "false_negative": 44,
-    "true_positive": 1401
+    "true_negative": 3904,
+    "false_positive": 60,
+    "false_negative": 3,
+    "true_positive": 355
   },
   "feature_weight_snapshot": {
-    "positive_arrival_delay": 0.09977621916985009,
-    "departure_minutes_from_midnight": 0.09344824373120775,
-    "station_departure_rank_pct": 0.07616577103645658,
-    "actual_vs_min_turn_buffer": 0.047612761843967844,
-    "departure_wave_bucket_code": 0.03991479218218656,
-    "ssr_per_pnr": 0.03527092725488207,
-    "transfer_ratio": 0.033971530669662096,
-    "bags_per_pax": 0.03290035171030983,
-    "minutes_since_first_departure": 0.03057330863915926,
-    "transfer_bags_per_pax": 0.030359715742711593
+    "scheduled_vs_min_turn_buffer": 0.2869836204606707,
+    "scheduled_ground_to_min_ratio": 0.1326422095032963,
+    "transfer_ratio": 0.12661013906643379,
+    "ssr_per_pnr": 0.0450884022228591,
+    "actual_vs_min_turn_buffer": 0.03502064893852653,
+    "avg_pnr_size": 0.030999636925131042,
+    "is_international": 0.02998148109175825,
+    "bags_per_pax": 0.026686214738850838,
+    "transfer_bags_per_pax": 0.024919696452853312,
+    "share_short_lead_pnr": 0.018778665037997133
   }
 }

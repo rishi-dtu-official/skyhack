@@ -40,7 +40,7 @@ class ProjectPaths:
 
     @property
     def output_score(self) -> Path:
-        return self.root / "skyhack.csv"
+        return self.root / "test_databaes.csv"
 
     @property
     def report_file(self) -> Path:

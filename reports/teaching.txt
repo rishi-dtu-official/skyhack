@@ -16,7 +16,7 @@ SKYHACK FLIGHT DIFFICULTY SCORING – FULL WALKTHROUGH
   - `bag_level.csv` — baggage routing showing transfer pressure.
   - `airports.csv` — minimum turn times and timezone metadata.
 - **Environment:** Python 3.12, pandas, numpy, scikit-learn, SHAP, matplotlib, seaborn, DuckDB, rich.
-- **Repo layout:** Code in `src/`, SQL in `sql/`, artifacts (figures, tables, models) in `artifacts/`, final export `skyhack.csv`, reports in `reports/`.
+- **Repo layout:** Code in `src/`, SQL in `sql/`, artifacts (figures, tables, models) in `artifacts/`, final export `test_databaes.csv`, reports in `reports/`.
 
 3. Delivery approach at a glance
 --------------------------------
@@ -24,7 +24,7 @@ We scripted the entire pipeline (`python -m src.pipeline`) so newcomers can repr
 1. Load raw dataframes.
 2. Build feature aggregates in `src/feature_engineering.py`.
 3. Train + calibrate the HistGradientBoosting model with temporal validation and rule-based recall boost (`src/scoring.py`).
-4. Score flights, attach SHAP drivers, rank daily, export `skyhack.csv`.
+4. Score flights, attach SHAP drivers, rank daily, export `test_databaes.csv`.
 5. Run EDA (`src/eda.py`) to compute metrics and figures.
 6. Generate cost-benefit, insights, and DuckDB SQL outputs.
 7. Save documentation and assets for reviewers.
@@ -66,22 +66,20 @@ We mimic how frontline teams reason about risk:
 4. Compute SHAP values, record top-three drivers per flight, export global importances.
 5. Plot SHAP dependence (`shap_turn_buffer_vs_transfer.png`).
 6. Rank flights daily, assign Difficulty / Medium / Easy classes.
-7. Write `skyhack.csv` with probabilities, rules, drivers, and context columns.
+7. Write `test_databaes.csv` with probabilities, rules, drivers, and context columns.
 8. Persist model bundle, metrics, and cost-benefit JSON.
 
 8. Explainability & business storytelling
 -----------------------------------------
-- **Performance snapshot:** Holdout recall ≈97%, precision ≈54%, F2 ≈0.84.
-- **Cost-benefit:** Using $5k false-negative / $200 false-positive assumptions, expected savings ≈$626K per day (`visualisation/expected_daily_cost_comparison.png`).
+- **Performance snapshot:** Holdout recall 99.2%, precision 85.5%, F2 0.96.
+- **Cost-benefit:** With $4.28K miss / $400 intervention assumptions, expected savings ≈$135K per day (`visualisation/expected_daily_cost_comparison.png`).
 - **Visual suite (`visualisation/`):** calibration curve, confusion matrix, feature importances, cost comparison.
 - **Narrative artifacts:** `reports/report.txt` for the executive story; `artifacts/tables/recommended_actions.json` for station-level playbooks.
 
-9. Statistical validation & sensitivity checks
-----------------------------------------------
-- **Correlation with reality:** Pearson 0.56 and Spearman 0.73 between blended score and actual departure delay minutes.
-- **Difficulty tiers:** Difficult flights depart 61.2 minutes late on average vs. -2.7 minutes for Easy (t-stat 36.25, p-value 4.4e-236).
-- **Tail risk:** Top 10% probability flights average 107 minutes delay vs. 9 minutes for the rest.
-- **Holdout discrimination:** ROC-AUC 0.914, PR-AUC 0.822 on the temporal test window.
+- **Correlation with reality:** Pearson 0.20 and Spearman 0.22 between blended score and actual departure delay minutes.
+- **Difficulty tiers:** Difficult flights depart 63.6 minutes late on average vs. 17.6 minutes for Easy (t-stat 10.12, p-value 2.2e-22).
+- **Tail risk:** Top 10% probability flights average 57.4 minutes delay vs. 17.1 minutes for the rest.
+- **Holdout discrimination:** ROC-AUC 0.9995, PR-AUC 0.9947 on the temporal test window.
 - **Artifacts:** Results stored in `artifacts/tables/statistical_validation.json`; regenerate by rerunning the pipeline.
 
 10. Feature engineering roadmap
@@ -95,7 +93,7 @@ We mimic how frontline teams reason about risk:
 11. Weighting and prioritization
 --------------------------------
 - The gradient-boosted model learns weights implicitly; SHAP confirms turn buffers, transfer density, booking pressure, and SSR load as top drivers.
-- A standardized logistic regression cross-check highlights the same top signals: positive arrival delay (9.98%), departure minutes from midnight (9.34%), station departure rank percentile (7.62%), actual vs. minimum turn buffer (4.76%), and transfer/SSR ratios (~3–4% each).
+- A standardized logistic regression cross-check highlights the same top signals: scheduled-versus-minimum turn buffer (~29%), scheduled-to-minimum ratio (~13%), transfer ratio (~13%), SSR density (~5%), and short-lead booking share (~2%).
 - Future iterations will fold in qualitative feedback from ops managers to codify acceptable trade-offs and adjust the rule lift.
 
 12. Limitations & assumptions
@@ -116,32 +114,31 @@ We mimic how frontline teams reason about risk:
 
 14. Feature deep-dive: translating to action
 --------------------------------------------
-- **`actual_vs_min_turn_buffer` (~4.8% weight):** Add 15 minutes of buffer or pre-stage turn teams—median probability drops by ≈0.12 for high-risk flights.
-- **`departure_wave_bucket_code` (~4.0% weight):** Smoothing three departures out of the 07:00–08:00 peak cut simultaneous alerts by ~18% in the holdout week.
-- **`positive_arrival_delay` (~10.0% weight):** When inbound delay >15 minutes, dispatch two extra agents; departure delay shrank by ~8 minutes on average.
-- **`ssr_per_pnr` (~3.5% weight):** Flights above 0.30 SSR/PNR benefited from pre-briefing gate teams and staging mobility gear—prep time improved by ~8 minutes.
+- **`scheduled_vs_min_turn_buffer` (~28.7% weight):** Add 15 minutes of buffer or pre-stage turn teams—median probability drops by ≈0.12 for high-risk flights.
+- **`scheduled_ground_to_min_ratio` (~13.3% weight):** Stretch turn plans to a 1.2× ratio or higher during peak waves to keep flights below the alert threshold.
+- **`transfer_ratio` (~12.7% weight):** Flights above ~0.45 transfer share need early baggage sortation alerts and dedicated runners.
+- **`ssr_per_pnr` (~4.5% weight):** Flights above 0.30 SSR/PNR benefited from pre-briefing gate teams and staging mobility gear—prep time improved by ~8 minutes.
 
 15. Threshold selection trade-offs
 ----------------------------------
-Using the cost model ($500 miss vs. $150 false alarm) we compared four thresholds on the 8-day holdout:
+Using the current cost model ($4.28K miss vs. $400 intervention) we compared five thresholds on the 8-day holdout:
 
 ```text
 Threshold | Precision | Recall | Missed Diff. | False Alarms | Total Cost (8 days)
 ----------|-----------|--------|--------------|--------------|---------------------
-0.050     | 0.461     | 0.990  | 15           | 1,670        | $258,000
-0.074     | 0.542     | 0.970  | 44           | 1,182        | $199,300
-0.100     | 0.602     | 0.949  | 73           |   906        | $172,400
-0.200     | 0.621     | 0.937  | 91           |   827        | $169,550
+0.15      | 0.474     | 1.000  | 0            | 398          | $158,950
+0.20      | 0.765     | 1.000  | 0            | 110          | $43,750
+0.25      | 0.855     | 0.992  | 3            |  60          | $36,000
+0.30      | 0.902     | 0.978  | 8            |  38          | $27,200
+0.35      | 0.928     | 0.969  | 11           |  27          | $22,800
 ```
 
-- The chosen 0.074 threshold keeps recall near 97% while holding false alarms to ~148 per day (1,182 over 8 days).
-- Even with the conservative cost assumptions, the model cuts expected cost from ~$90K/day (no targeting) to ~$25K/day, saving ~$65K/day (~$24M annually).
-- Raising the threshold to 0.20 reduces alerts but doubles missed difficult flights, which ops leadership wanted to avoid.
+- The chosen 0.25 threshold keeps recall above 99% while trimming false alarms to ~8 per day (60 over 8 days).
+- At that setting the model cuts expected cost from ~$138K/day (no targeting) to ~$3.3K/day, saving ~$135K/day (~$49M annually).
+- Pushing to 0.30 reduces alerts further but nearly triples missed difficult flights, so operations prefers the recall-heavy 0.25 configuration.
 
-16. Error analysis insights
----------------------------
-- **False negatives (46 flights):** Mostly international wide-bodies with irregular operations; plan to add IRROPS and inbound-connection risk features.
-- **False positives (1,236 flights):** High SSR/bag load handled well by veteran crews; integrating crew experience metrics could lift precision toward 65%.
+- **False negatives (3 flights):** Mostly international wide-bodies with irregular operations; plan to add IRROPS and inbound-connection risk features.
+- **False positives (60 flights):** High SSR/bag load handled well by veteran crews; integrating crew experience metrics could further lift precision.
 - **Next steps:** Manual review queue to capture qualitative notes until the new features land.
 
 17. Monitoring & refresh cadence
@@ -169,13 +166,13 @@ Threshold | Precision | Recall | Missed Diff. | False Alarms | Total Cost (8 day
 	```
 2. (Optional) Clear outputs:
 	```bash
-	rm -rf artifacts data/processed skyhack.csv visualisation
+	rm -rf artifacts data/processed test_databaes.csv visualisation
 	```
 3. Run the pipeline:
 	```bash
 	python -m src.pipeline
 	```
-4. Review outputs: `skyhack.csv`, `artifacts/` (tables, figures, model), `visualisation/`, `reports/report.txt`, and this guide.
+4. Review outputs: `test_databaes.csv`, `artifacts/` (tables, figures, model), `visualisation/`, `reports/report.txt`, and this guide.
 
 20. What happens under the hood
 -------------------------------

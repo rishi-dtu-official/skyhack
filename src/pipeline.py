@@ -77,7 +77,7 @@ def run_pipeline() -> None:
     console.log("Training difficulty model")
     model_outputs = train_difficulty_model(frames.flight)
 
-    console.log("Applying scoring and exporting skyhack.csv")
+    console.log("Applying scoring and exporting test_databaes.csv")
     scored = apply_scoring(frames.flight, model_outputs)
 
     console.log("Running exploratory data analysis")

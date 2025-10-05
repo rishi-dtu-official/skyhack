@@ -21,7 +21,7 @@ This repository contains an end-to-end workflow that ingests two weeks of ORD de
 │   └── models/             # Serialized difficulty model artifact
 ├── sql/                    # DuckDB SQL notebooks executed during the pipeline
 ├── src/                    # Python source modules (ingestion, features, scoring, EDA)
-├── skyhack.csv             # Final flight-level difficulty export
+├── test_databaes.csv       # Final flight-level difficulty export
 ├── reports/report.txt      # Narrative summary of findings & recommendations
 └── README.md               # This file
 ```
@@ -50,7 +50,7 @@ The run performs the following actions:
 1. Loads all raw CSVs into pandas and DuckDB.
 2. Engineers flight-level, passenger, baggage, and special-service features—including temporal context such as minutes-since-first departure and bank position.
 3. Trains a HistGradientBoosting model (with class weighting), applies isotonic calibration, and blends in a rule-based lift to prioritize recall on obvious high-risk flights.
-4. Generates daily difficulty rankings and classifications (Difficult / Medium / Easy), attaches SHAP driver text & interaction plots, and exports everything to `skyhack.csv`.
+4. Generates daily difficulty rankings and classifications (Difficult / Medium / Easy), attaches SHAP driver text & interaction plots, and exports everything to `test_databaes.csv`.
 5. Produces EDA visualizations, summary statistics, SQL-driven tables, cost-benefit analytics, and actionable insights.
 6. Saves serialized artifacts (model + calibrator bundle, metrics, recommended actions) for transparency.
 
@@ -79,14 +79,14 @@ If you are evaluating this submission on your own machine (outside the Codespace
 	```
 4. **(Optional) Remove heavy artifacts for a clean run**
 	```bash
-	rm -rf artifacts data/processed skyhack.csv visualisation
+	rm -rf artifacts data/processed test_databaes.csv visualisation
 	```
 5. **Execute the end-to-end pipeline**
 	```bash
 	python -m src.pipeline
 	```
 6. **Review outputs**
-	- `skyhack.csv` (flight difficulty export)
+	- `test_databaes.csv` (flight difficulty export)
 	- `reports/report.txt` (narrative summary)
 	- `artifacts/figures/` (EDA plots + SHAP interaction)
 	- `visualisation/` (calibration curve, confusion matrix, cost comparison, feature bars)
@@ -98,7 +98,7 @@ If you are evaluating this submission on your own machine (outside the Codespace
 
 ## Key deliverables
 
-- `skyhack.csv`: Flight identifiers, feature highlights, raw & blended probabilities, rule trigger flag, SHAP driver text, daily rank, and difficulty class.
+- `test_databaes.csv`: Flight identifiers, feature highlights, raw & blended probabilities, rule trigger flag, SHAP driver text, daily rank, and difficulty class.
 - `reports/report.txt`: Narrative report answering all EDA questions, describing the scoring approach, and highlighting operational recommendations.
 - `artifacts/figures/*.png`: Visuals referenced in the report (now includes SHAP interaction plots).
 - `artifacts/tables/*.csv|json`: Supporting tables including model metrics, SHAP feature importances, cost-benefit analysis, EDA summaries, and DuckDB query outputs.

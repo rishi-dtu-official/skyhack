@@ -308,8 +308,8 @@ def train_difficulty_model(df: pd.DataFrame) -> ModelOutputs:
     rule_train = _rule_based_boost(model_df.loc[train_mask])
     rule_test = _rule_based_boost(model_df.loc[test_mask])
 
-    blended_train = np.clip(train_scores + RULE_BOOST * rule_train, 0, 1)
-    blended_test = np.clip(test_scores + RULE_BOOST * rule_test, 0, 1)
+    blended_train = np.clip(train_scores + rule_train, 0, 1)
+    blended_test = np.clip(test_scores + rule_test, 0, 1)
 
     train_metrics = _compute_metrics(y_train.to_numpy(), blended_train, threshold)
     y_test_np = y_test.to_numpy()
